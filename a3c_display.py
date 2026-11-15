@@ -1,5 +1,10 @@
 # -*- coding: utf-8 -*-
-import tensorflow as tf
+# Inference-only tool: loads a checkpoint and watches the trained agent
+# play Pong live (GameState(display=True)). No training happens here.
+# Note: a3c_training_thread and rmsprop_applier are imported below but
+# never used -- leftover from copy-pasting a3c.py's setup code.
+import tensorflow.compat.v1 as tf
+tf.disable_v2_behavior()
 import numpy as np
 import random
 
@@ -18,11 +23,13 @@ from constants import USE_GPU
 from constants import USE_LSTM
 
 def choose_action(pi_values):
-  return np.random.choice(range(len(pi_values)), p=pi_values)  
+  # sample from the policy distribution, same as during training
+  return np.random.choice(range(len(pi_values)), p=pi_values)
 
 # use CPU for display tool
 device = "/cpu:0"
 
+# thread_index=-1 since this is the one and only ("global") network instance here
 if USE_LSTM:
   global_network = GameACLSTMNetwork(ACTION_SIZE, -1, device)
 else:
@@ -30,6 +37,8 @@ else:
 
 learning_rate_input = tf.placeholder("float")
 
+# built so the graph matches the checkpoint's variable set, but
+# apply_gradients() is never called -- this tool never trains
 grad_applier = RMSPropApplier(learning_rate = learning_rate_input,
                               decay = RMSP_ALPHA,
                               momentum = 0.0,
@@ -51,6 +60,8 @@ else:
 
 game_state = GameState(0, display=True, no_op_max=0)
 
+# forever loop: query the policy, act, repeat -- rendered on screen because
+# display=True was passed above
 while True:
   pi_values = global_network.run_policy(sess, game_state.s_t)
 

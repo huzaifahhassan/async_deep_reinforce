@@ -1,7 +1,13 @@
 # -*- coding: utf-8 -*-
-import tensorflow as tf
+# A hand-rolled RMSProp optimizer. TF's built-in tf.train.RMSPropOptimizer
+# isn't used because A3C needs "shared" RMSProp: one set of accumulator
+# slots per *global* variable, updated by gradients computed locally by
+# whichever thread happens to finish a rollout -- not one optimizer per
+# thread with its own separate statistics.
+import tensorflow.compat.v1 as tf
+tf.disable_v2_behavior()
 
-from tensorflow.python.training import training_ops
+from tensorflow.python.ops import gen_training_ops as training_ops
 from tensorflow.python.training import slot_creator
 
 class RMSPropApplier(object):
@@ -32,6 +38,8 @@ class RMSPropApplier(object):
     self._slots = {}
 
   def _create_slots(self, var_list):
+    # one "rms" (moving average of squared gradients) and "momentum" slot
+    # per variable, created once and reused on every subsequent update
     for v in var_list:
       # 'val' is Variable's intial value tensor.
       val = tf.constant(1.0, dtype=v.dtype, shape=v.get_shape())
@@ -75,7 +83,7 @@ class RMSPropApplier(object):
   # TODO: in RMSProp native code, memcpy() (for CPU) and
   # cudaMemcpyAsync() (for GPU) are used when updating values,
   # and values might tend to be overwritten with results from other threads.
-  # (Need to check the learning performance with replacing it)  
+  # (Need to check the learning performance with replacing it)
   def _apply_dense(self, grad, var):
     rms = self.get_slot(var, "rms")
     mom = self.get_slot(var, "momentum")
@@ -99,6 +107,10 @@ class RMSPropApplier(object):
       with tf.name_scope(name, self._name, []) as name:
         self._prepare()
         for var, accum_grad in zip(var_list, accum_grad_list):
+          # clip each gradient's norm before applying it -- several threads
+          # are hitting these same global variables concurrently, and a
+          # single large/unstable gradient from one of them would otherwise
+          # be able to blow up the shared weights
           with tf.name_scope("update_" + var.op.name), tf.device(var.device):
             clipped_accum_grad = tf.clip_by_norm(accum_grad, self._clip_norm)
             update_ops.append(self._apply_dense(clipped_accum_grad, var))

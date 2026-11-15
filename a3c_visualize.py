@@ -1,5 +1,11 @@
 # -*- coding: utf-8 -*-
-import tensorflow as tf
+# Inspection-only tool: loads a checkpoint and plots the first conv layer's
+# filters so you can eyeball what the network learned to detect.
+# Note: game_state, a3c_training_thread and rmsprop_applier are imported
+# below but never actually used in this file -- only game_ac_network.py's
+# global_network is exercised (its W_conv1 weights get read for plotting).
+import tensorflow.compat.v1 as tf
+tf.disable_v2_behavior()
 import numpy as np
 import cv2
 import sys
@@ -33,6 +39,8 @@ training_threads = []
 
 learning_rate_input = tf.placeholder("float")
 
+# built only so the graph's variable set matches the checkpoint being
+# restored below -- apply_gradients() is never called here
 grad_applier = RMSPropApplier(learning_rate = learning_rate_input,
                               decay = RMSP_ALPHA,
                               momentum = 0.0,
@@ -51,10 +59,13 @@ if checkpoint and checkpoint.model_checkpoint_path:
   print("checkpoint loaded:", checkpoint.model_checkpoint_path)
 else:
   print("Could not find old checkpoint")
-  
+
+# W_conv1 shape is (8, 8, 4, 16): 8x8 kernel, 4 input channels (the 4
+# stacked frames), 16 output filters
 W_conv1 = sess.run(global_network.W_conv1)
 
-# show graph of W_conv1
+# show graph of W_conv1 -- one small grayscale image per (input channel,
+# output filter) pair, so a 4x16 grid of 8x8 patches in total
 fig, axes = plt.subplots(4, 16, figsize=(12, 6),
              subplot_kw={'xticks': [], 'yticks': []})
 fig.subplots_adjust(hspace=0.1, wspace=0.1)
@@ -67,4 +78,3 @@ for ax,i in zip(axes.flat, range(4*16)):
   ax.set_title(str(inch) + "," + str(outch))
 
 plt.show()
-
